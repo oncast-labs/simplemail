@@ -15,10 +15,17 @@ first create configuration file named 'email.properties' and put the content bel
 
 then send synchronously:
   
-    MailSender.mail(new SimpleTextEmail("Subject", "content text")).to("email@example.com").sendAndWait();
+    MailSender.send()
+    	.email(new SimpleTextEmail("Subject", "content text"))
+    	.to("email@example.com")
+    	.andWait();
 
 or asynchronously:
   
-    MailSender.mail(new SimpleTextEmail("Subject", "content text")).to("email@example.com").sendAsync();
+    MailSender.send()
+    	.email(new SimpleTextEmail("Subject", "content text"))
+    	.individually()
+    	.to("email.1@example.com", "email.2@example.com")
+    	.inBackground();
 		
 It also supports callbacks and HTML templates. Check it out!
