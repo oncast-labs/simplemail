@@ -1,5 +1,10 @@
 package br.com.oncast.simplemail;
 
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
+
 import javax.mail.Address;
 import javax.mail.Message;
 import javax.mail.MessagingException;
@@ -24,20 +29,30 @@ import com.google.inject.Inject;
 
 public class MailSender {
 
-	private final AuthenticationProvider authentication;
+	private final AuthenticationProvider authenticationProvider;
 
-	private final SmtpConfigurationProvider smtp;
+	private final SmtpConfigurationProvider smtpProvider;
 
 	private Email email;
 
-	private String receiverEmail;
+	private Set<InternetAddress> recipients;
 
-	private String senderEmail;
+	private InternetAddress senderEmail;
+
+	private Sender sender;
+
+	private final InternetAddress defaultEmail;
 
 	@Inject
-	private MailSender(final AuthenticationProvider authentication, final SmtpConfigurationProvider smtp) {
-		this.authentication = authentication;
-		this.smtp = smtp;
+	private MailSender(final AuthenticationProvider authenticationProvider, final SmtpConfigurationProvider smtpProvider) {
+		this.authenticationProvider = authenticationProvider;
+		this.smtpProvider = smtpProvider;
+		this.sender = Sender.SEND_MUTUALLY_TO_ALL_RECIPIENTS;
+		try {
+			this.defaultEmail = new InternetAddress(authenticationProvider.getEmailUsername());
+		} catch (final AddressException e) {
+			throw new RuntimeException(String.format("Invalid default user e-mail: %s.", authenticationProvider.getEmailUsername()), e);
+		}
 	}
 
 	public static MailSender send() {
@@ -49,29 +64,53 @@ public class MailSender {
 		return this;
 	}
 
-	public MailSender to(final String receiverEmail) {
-		this.receiverEmail = receiverEmail;
+	public MailSender to(final String... recipients) {
+		return to(Arrays.asList(recipients));
+	}
+
+	public MailSender individually() {
+		this.sender = Sender.SEND_INDIVIDUALLY_TO_EACH_RECIPIENT;
+		return this;
+	}
+
+	public MailSender to(final Collection<String> recipients) {
+		this.recipients = new HashSet<InternetAddress>();
+		for (final String email : recipients) {
+			try {
+				this.recipients.add(new InternetAddress(email));
+			} catch (final AddressException e) {
+				throw new RuntimeException(String.format("Invalid recipient e-mail: %s.", email), e);
+			}
+		}
 		return this;
 	}
 
 	public MailSender from(final String senderEmail) {
-		this.senderEmail = senderEmail;
+		try {
+			this.senderEmail = new InternetAddress(senderEmail);
+		} catch (final AddressException e) {
+			throw new RuntimeException(String.format("Invalid sender e-mail: %s.", senderEmail), e);
+		}
 		return this;
 	}
 
 	public void andWait() {
+		doSend();
+	}
+
+	private void doSend() {
 		isReadyToSend();
 
 		try {
-			final Session session = Session.getDefaultInstance(smtp.getConfiguration(), authentication.mailAuthenticator());
+			final Session session = Session.getDefaultInstance(smtpProvider.getConfiguration(), authenticationProvider.mailAuthenticator());
 			final MimeMessage message = new MimeMessage(session);
 			from(message, defaultIfNull(senderEmail));
-			to(message, defaultIfNull(receiverEmail));
 			subject(message, email.getSubject());
 			if (email instanceof HasReplyTo) replyTo(message, ((HasReplyTo) email).getReplyTo());
 			if (email instanceof TextEmail) text(message, ((TextEmail) email).getText());
 			if (email instanceof TemplateEmail) htmlContent(message, (TemplateEmail) email);
-			Transport.send(message);
+
+			sender.sendTo(message, defaultIfEmpty(recipients));
 		} catch (final MessagingException e) {
 			throw new RuntimeException("Error sending e-mail.", e);
 		}
@@ -91,7 +130,7 @@ public class MailSender {
 			@Override
 			public void run() {
 				try {
-					andWait();
+					doSend();
 					callback.onSuccess();
 				} catch (final Throwable e) {
 					callback.onFailure(e);
@@ -108,28 +147,20 @@ public class MailSender {
 
 	}
 
-	private String defaultIfNull(final String value) {
-		return value == null ? authentication.getEmailUsername() : value;
+	private InternetAddress defaultIfNull(final InternetAddress value) {
+		return value == null ? defaultEmail : value;
+	}
+
+	private Collection<InternetAddress> defaultIfEmpty(final Collection<InternetAddress> value) {
+		return (value == null || value.isEmpty()) ? Arrays.asList(defaultEmail) : value;
 	}
 
 	private void isReadyToSend() {
 		if (this.email == null) throw new IllegalStateException("It should set e-mail before trying to send");
 	}
 
-	private void from(final Message message, final String senderEmail) throws MessagingException {
-		try {
-			message.setFrom(new InternetAddress(senderEmail));
-		} catch (final AddressException e) {
-			throw new RuntimeException(String.format("Invalid sender e-mail: %s.", senderEmail), e);
-		}
-	}
-
-	private void to(final Message message, final String receiverEmail) throws MessagingException {
-		try {
-			message.addRecipient(Message.RecipientType.TO, new InternetAddress(receiverEmail));
-		} catch (final AddressException e) {
-			throw new RuntimeException(String.format("Invalid receiver e-mail: %s.", receiverEmail), e);
-		}
+	private void from(final Message message, final InternetAddress sender) throws MessagingException {
+		message.setFrom(sender);
 	}
 
 	private void subject(final Message message, final String string) throws MessagingException {
@@ -158,6 +189,36 @@ public class MailSender {
 		html.setContent(content, "text/html; charset=UTF-8");
 		multipart.addBodyPart(html);
 		message.setContent(multipart);
+	}
+
+	private enum Sender {
+		SEND_INDIVIDUALLY_TO_EACH_RECIPIENT {
+			@Override
+			void sendTo(final Message message, final Collection<InternetAddress> recipients) {
+				for (final InternetAddress recipient : recipients) {
+					try {
+						message.setRecipient(Message.RecipientType.TO, recipient);
+						Transport.send(message);
+					} catch (final MessagingException e) {
+						throw new RuntimeException("Failed to send e-mail to " + recipient.getAddress() + ".", e);
+					}
+				}
+
+			}
+		},
+		SEND_MUTUALLY_TO_ALL_RECIPIENTS {
+			@Override
+			void sendTo(final Message message, final Collection<InternetAddress> recipients) {
+				try {
+					message.addRecipients(Message.RecipientType.TO, (Address[]) recipients.toArray());
+					Transport.send(message);
+				} catch (final MessagingException e) {
+					throw new RuntimeException("Failed to send e-mail to " + recipients.size() + " recipients.", e);
+				}
+			}
+		};
+
+		abstract void sendTo(Message message, Collection<InternetAddress> recipients);
 	}
 
 }
