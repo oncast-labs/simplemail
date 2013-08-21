@@ -5,4 +5,10 @@
 *.war
 *.ear
 
+# Compiled files #
 target/
+
+# Eclipse metadata #
+.classpath
+.project
+.settings/

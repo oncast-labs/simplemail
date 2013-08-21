@@ -21,6 +21,7 @@ public class HelloWorld {
 						System.err.println("error: " + e.getMessage());
 					}
 				});
+		System.out.println("Sending e-mail asynchronously!");
 	}
 
 }
