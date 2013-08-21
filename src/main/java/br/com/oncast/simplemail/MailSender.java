@@ -40,11 +40,11 @@ public class MailSender {
 		this.smtp = smtp;
 	}
 
-	public static MailSender mail(final Email email) {
-		return SimpleMailModule.getInjector().getInstance(MailSender.class).setEmail(email);
+	public static MailSender send() {
+		return SimpleMailModule.getInjector().getInstance(MailSender.class);
 	}
 
-	private MailSender setEmail(final Email email) {
+	public MailSender email(final Email email) {
 		this.email = email;
 		return this;
 	}
@@ -59,7 +59,7 @@ public class MailSender {
 		return this;
 	}
 
-	public void sendAndWait() {
+	public void andWait() {
 		isReadyToSend();
 
 		try {
@@ -77,21 +77,21 @@ public class MailSender {
 		}
 	}
 
-	public void sendAsync() {
+	public void inBackground() {
 		new Thread() {
 			@Override
 			public void run() {
-				sendAndWait();
+				andWait();
 			}
 		}.start();
 	}
 
-	public void sendAsync(final AsyncCallback callback) {
+	public void inBackground(final AsyncCallback callback) {
 		new Thread() {
 			@Override
 			public void run() {
 				try {
-					sendAndWait();
+					andWait();
 					callback.onSuccess();
 				} catch (final Throwable e) {
 					callback.onFailure(e);

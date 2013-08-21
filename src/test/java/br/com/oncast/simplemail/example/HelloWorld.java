@@ -8,11 +8,11 @@ public class HelloWorld {
 
 	public static void main(final String[] args) {
 		final String to = "email@example.com";
-		MailSender.mail(new SimpleTextEmail("Simple Subject", "Simple e-mail content text")).to(to).sendAndWait();
+		MailSender.send().email(new SimpleTextEmail("Simple Subject", "Simple e-mail content text")).to(to).andWait();
 		System.out.println("Simple e-mail sent synchronously!");
 
-		MailSender.mail(new TemplateExampleEmail("Template example email", "This is the body content of a template example e-mail", "this is an example, feel free to use it!")).to(to)
-				.sendAsync(new AsyncCallback() {
+		MailSender.send().email(new TemplateExampleEmail("Template example email", "This is the body content of a template example e-mail", "this is an example, feel free to use it!")).to(to)
+				.inBackground(new AsyncCallback() {
 					public void onSuccess() {
 						System.out.println("Template e-mail sent asynchronously!");
 					}
