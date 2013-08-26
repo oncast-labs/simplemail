@@ -210,7 +210,7 @@ public class MailSender {
 			@Override
 			void sendTo(final Message message, final Collection<InternetAddress> recipients) {
 				try {
-					message.addRecipients(Message.RecipientType.TO, (Address[]) recipients.toArray());
+					message.addRecipients(Message.RecipientType.TO, recipients.toArray(new InternetAddress[recipients.size()]));
 					Transport.send(message);
 				} catch (final MessagingException e) {
 					throw new RuntimeException("Failed to send e-mail to " + recipients.size() + " recipients.", e);
